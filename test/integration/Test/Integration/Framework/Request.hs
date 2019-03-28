@@ -10,6 +10,8 @@ module Test.Integration.Framework.Request
     , request'
     , request_
     , successfulRequest
+    , Headers(..)
+    , Payload(..)
     , RequestException(..)
     , ($-)
     ) where
@@ -38,8 +40,6 @@ import Data.Functor
     ( ($>) )
 import Data.Generics.Product.Typed
     ( HasType, typed )
-import Data.Maybe
-    ( fromMaybe )
 import Data.Text
     ( Text )
 import Network.HTTP.Client
@@ -85,6 +85,18 @@ data RequestException
 
 instance Exception RequestException
 
+-- | The payload of the request
+data Payload
+    = Json Aeson.Value
+    | NonJson ByteString
+    | Empty
+
+-- | The headers of the request
+data Headers
+    = Headers RequestHeaders
+    | Default
+    | None
+
 -- | Makes a request to the API and decodes the response.
 request
     :: forall a m ctx.
@@ -97,10 +109,10 @@ request
         )
     => (Method, Text)
         -- ^ HTTP method and request path
-    -> Maybe Aeson.Value
+    -> Payload
         -- ^ Request body
     -> m (Either RequestException a)
-request (verb, path) body = (>>= handleResponse) <$> request' (verb, path) Nothing body
+request (verb, path) body = (>>= handleResponse) <$> request' (verb, path) Default body
   where
     -- Either decode response body, or provide a RequestException.
     handleResponse (req, res) = case responseStatus res of
@@ -133,9 +145,9 @@ request'
         )
     => (Method, Text)
         -- ^ HTTP method and request path
-    -> Maybe RequestHeaders
+    -> Headers
         -- ^ Request headers
-    -> Maybe Aeson.Value
+    -> Payload
         -- ^ Request body
     -> m (Either RequestException (HTTP.Request, HTTP.Response ByteString))
 request' (verb, path) reqHeaders body = do
@@ -145,17 +157,24 @@ request' (verb, path) reqHeaders body = do
         res <- httpLbs (prepareReq req reqHeaders) man
         pure (req, res)
     where
-        prepareReq :: HTTP.Request -> Maybe RequestHeaders -> HTTP.Request
+        prepareReq :: HTTP.Request -> Headers -> HTTP.Request
         prepareReq req h = req
             { method = verb
-            , requestBody = maybe mempty (RequestBodyLBS . Aeson.encode) body
-            , requestHeaders = fromMaybe defaultHeaders h
+            , requestBody = payload
+            , requestHeaders = headers
             }
             where
-                defaultHeaders =
-                    [ ("Content-Type", "application/json")
-                    , ("Accept", "application/json")
-                    ]
+                headers = case h of
+                    Headers x -> x
+                    Default -> [ ("Content-Type", "application/json")
+                               , ("Accept", "application/json")
+                               ]
+                    None -> mempty
+
+                payload = case body of
+                    Json x -> (RequestBodyLBS . Aeson.encode) x
+                    NonJson x -> RequestBodyLBS x
+                    Empty -> mempty
 
         -- Catch HttpExceptions and turn them into
         -- Either RequestExceptions.
@@ -172,9 +191,9 @@ request_
         , HasManager ctx
         )
     => (Method, Text)
-    -> Maybe Aeson.Value
+    -> Payload
     -> m ()
-request_ req body = void $ request' req Nothing body
+request_ req body = void $ request' req Default body
 
 -- | Makes a request to the API, but throws if it fails.
 successfulRequest
@@ -187,7 +206,7 @@ successfulRequest
         , HasManager ctx
         )
     => (Method, Text)
-    -> Maybe Aeson.Value
+    -> Payload
     -> m a
 successfulRequest req body = request req body >>= either throwM pure
 

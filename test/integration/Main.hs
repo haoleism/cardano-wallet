@@ -1,3 +1,5 @@
+{-# LANGUAGE QuasiQuotes #-}
+
 module Main where
 
 import Prelude
@@ -22,10 +24,13 @@ import Test.Hspec
     ( beforeAll, describe, hspec )
 import Test.Integration.Framework.DSL
     ( Context (..)
+    , Headers (..)
+    , Payload (..)
     , RequestException (..)
     , Scenarios
     , expectError
     , expectResponseCode
+    , json
     , request
     , request'
     , request_
@@ -64,13 +69,13 @@ withWallet action = do
 dummySpec :: Scenarios Context
 dummySpec = do
     scenario "Try the API which isn't implemented yet" $ do
-        response <- request ("GET", "api/wallets") Nothing
+        response <- request ("GET", "api/wallets") Empty
         verify (response :: Either RequestException Value)
             [ expectError
             ]
 
     scenario "request_ function is always successful" $ do
-        request_ ("GET", "api/xyzzy") Nothing
+        request_ ("GET", "api/xyzzy") $ Json [json| { "just": "test" } |]
 
 -- Temporary test setup for testing response codes
 dummySetup :: ((Text, Manager) -> IO a) -> IO a
@@ -83,26 +88,45 @@ dummySetup action = do
 respCodesSpec :: Scenarios Context
 respCodesSpec = do
     scenario "GET; Response code 200" $ do
-        response <- request' ("GET", "/get?my=arg") Nothing Nothing
+        response <- request' ("GET", "/get?my=arg") Default Empty
         verify (response :: Either RequestException (Request, Response ByteString))
             [ expectResponseCode status200
             ]
 
     scenario "GET; Response code 404" $ do
-        response <- request' ("GET", "/get/nothing") Nothing Nothing
+        response <- request' ("GET", "/get/nothing") Default Empty
         verify (response :: Either RequestException (Request, Response ByteString))
             [ expectResponseCode status404
             ]
 
-    scenario "POST; Response code 200" $ do
-        let header = [("dummy", "header")]
-        response <- request' ("POST", "/post") (Just header) Nothing
+    scenario "POST; Response code 200; Json payload" $ do
+        let headers = Headers [("dummy", "header")]
+        let payload = Json [json| {
+                        "addressPoolGap": 70,
+                        "assuranceLevel": "strict",
+                        "name": "Wallet EOS"
+                        } |]
+
+        response <- request' ("POST", "/post") headers payload
+        verify (response :: Either RequestException (Request, Response ByteString))
+            [ expectResponseCode status200
+            ]
+
+    scenario "POST; Response code 200; non-Json payload" $ do
+        let headers = Headers [("dummy", "header")]
+        let payloadInvalid = NonJson "{\
+                        \\"addressPoolGap: 70,\
+                        \\"assuranceLevel\": strict,\
+                        \\"name\": \"Wallet EOS\"\
+                        \}"
+
+        response <- request' ("POST", "/post") headers payloadInvalid
         verify (response :: Either RequestException (Request, Response ByteString))
             [ expectResponseCode status200
             ]
 
     scenario "POST; Response code 405" $ do
-        response <- request' ("POST", "/get") Nothing Nothing
+        response <- request' ("POST", "/get") None Empty
         verify (response :: Either RequestException (Request, Response ByteString))
             [ expectResponseCode status405
             ]

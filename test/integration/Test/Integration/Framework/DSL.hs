@@ -21,6 +21,8 @@ module Test.Integration.Framework.DSL
     , expectSuccess
     , expectError
     , expectResponseCode
+    , Headers(..)
+    , Payload(..)
     , RequestException(..)
 
     -- * Helpers
@@ -62,7 +64,9 @@ import Test.Hspec.Core.Spec
 import Test.Hspec.Expectations.Lifted
     ( shouldBe )
 import Test.Integration.Framework.Request
-    ( RequestException (..)
+    ( Headers (..)
+    , Payload (..)
+    , RequestException (..)
     , request
     , request'
     , request_
